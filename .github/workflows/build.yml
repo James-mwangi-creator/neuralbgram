@@ -1,0 +1,79 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install @expo/env @expo/config @expo/config-plugins --save-dev
+          npm list @expo/env || echo "Dependencies installed"
+
+      - name: Create EAS configuration
+        run: |
+          cat > eas.json << 'EOF'
+          {
+            "build": {
+              "preview": {
+                "android": {
+                  "buildType": "apk"
+                }
+              },
+              "production": {}
+            }
+          }
+          EOF
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Generate Android project
+        run: |
+          npx expo prebuild --platform android --clean --npm
+        env:
+          EXPO_NO_TELEMETRY: 1
+          CI: 1
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease assembleDebug --no-daemon --warning-mode all
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-unsigned
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: warn
